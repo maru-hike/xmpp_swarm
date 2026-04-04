@@ -1,0 +1,7 @@
+{application,xmpp_swarm,
+             [{description,"XMPP Swarm Test Framework"},
+              {vsn,"0.1.0"},
+              {modules,[xmpp_swarm_app,xmpp_swarm_connection,xmpp_swarm_sup]},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {mod,{xmpp_swarm_app,[]}}]}.
