@@ -25,7 +25,7 @@ start_link() ->
 init([]) ->
   Children = [{
     xmpp_swarm_connection,
-    {xmpp_swarm_connection, start_link, ["localhost", 5222, "user1@localhost"]},
+    {xmpp_swarm_connection, start_link, ["localhost", 5222, #{jid => <<"maru@xmpp-local.tingmessenger.com">>, password => <<"maru">>}]},
     permanent,
     5000,
     worker,
