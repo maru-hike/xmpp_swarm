@@ -47,8 +47,6 @@ init({Host, Port, UserOpts}) ->
 
   gen_tcp:send(Socket, lists:flatten(StreamStart)),
 
-  io:format("Stream opened to ~s~n", [Domain]),
-
   {ok, #state{
     socket = Socket,
     host = Host,
@@ -78,7 +76,7 @@ handle_info({'$gen_event', {xmlstreamend, Name}}, State) ->
 
 handle_info({'$gen_event', {xmlstreamelement, El}}, State) ->
   Decoded = xmpp:decode(El),
-  io:format("DECODED: ~p~n", [Decoded]),
+  % io:format("DECODED: ~p~n", [Decoded]),
   State1 = handle_stanza(Decoded, State),
   {noreply, State1};
 handle_info({tcp_closed, Socket}, State) ->
@@ -122,16 +120,12 @@ handle_unauthenticated(#stream_features{sub_els = Elements} = _Features, State) 
   end;
 handle_unauthenticated(#sasl_success{}, State) ->
   io:format("SASL SUCCESS - restarting stream~n"),
-
-  State1 = restart_stream(State),
-  io:format("State after reset~p~n", [State1]),
-  State1;
+  restart_stream(State);
 handle_unauthenticated(Stanza, State) ->
   io:format("OTHER STANZA: ~p~n", [Stanza]),
   State.
 
 handle_authenticated(#stream_features{sub_els = Features}, State) ->
-  io:format("Processing features:~p~n", [Features]),
   lists:map(fun(#bind{}) ->
       %% Do binding logic here
       send_bind(State),
@@ -141,7 +135,6 @@ handle_authenticated(#stream_features{sub_els = Features}, State) ->
   end, Features),
   State;
 handle_authenticated(#iq{type = get, id = Id, from = From, sub_els = [#ping{}]}, State) ->
-  io:format("PING from ~p, replying with pong~n", [From]),
   Reply = #iq{type = result, id = Id, to = From, sub_els = []},
   send_xmpp(Reply, State);
 handle_authenticated(#iq{type = result, id = <<"bind_1">>, sub_els = [#bind{jid = JID}]}, State) ->
@@ -160,7 +153,7 @@ send_bind(State) ->
   send_xmpp(IQ, State).
 
 send_xmpp(XMPP, #state{pending = Pending} =State) ->
-  io:format("Sending XMPP:~p", [XMPP]),
+  % io:format("Sending XMPP:~p", [XMPP]),
   case get_id(XMPP) of
     undefined ->
       io:format("ID FIELD NOT FOUND:~p~n", [XMPP]),
