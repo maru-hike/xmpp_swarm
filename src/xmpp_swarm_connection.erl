@@ -139,12 +139,42 @@ handle_authenticated(#iq{type = get, id = Id, from = From, sub_els = [#ping{}]},
   send_xmpp(Reply, State);
 handle_authenticated(#iq{type = result, id = <<"bind_1">>, sub_els = [#bind{jid = JID}]}, State) ->
   io:format("BOUND successfully as ~s~n", [jid:encode(JID)]),
-  State;
+  send_presence(State);
 handle_authenticated(#iq{type = error} = IQ, State) ->
   io:format("IQ ERROR: ~p~n", [IQ]),
   State;
+handle_authenticated(#presence{type = available, from = From, show = Show, status = Status}, State) ->
+  StatusText = case Status of
+    [#text{data = S} | _] -> S;
+    _ -> <<"(no status)">>
+  end,
+  io:format("PRESENCE AVAILABLE from ~s show=~p status=~s~n",
+            [jid:encode(From), Show, StatusText]),
+  State;
+handle_authenticated(#presence{type = unavailable, from = From}, State) ->
+  io:format("PRESENCE UNAVAILABLE from ~s~n", [jid:encode(From)]),
+  State;
+handle_authenticated(#presence{type = subscribe, from = From, id = _Id}, State) ->
+  io:format("SUBSCRIBE request from ~s, auto-approving~n", [jid:encode(From)]),
+  Approval = #presence{id = p1_rand:get_string(), type = subscribed, to = From},
+  XML = fxml:element_to_binary(xmpp:encode(Approval)),
+  ok = gen_tcp:send(State#state.socket, XML),
+  State;
+handle_authenticated(#presence{type = Type, from = From}, State) ->
+  io:format("PRESENCE ~p from ~p~n", [Type, From]),
+  State;
 handle_authenticated(Stanza, State) ->
   io:format("UNHANDLED AUTHENTICATED STANZA: ~p~n", [Stanza]),
+  State.
+
+send_presence(State) ->
+  Presence = #presence{id = p1_rand:get_string(),
+                       type = available, show = chat,
+                       status = [#text{data = <<"Online">>}],
+                       priority = 1},
+  XML = fxml:element_to_binary(xmpp:encode(Presence)),
+  io:format("Sending initial presence: ~p~n", [XML]),
+  ok = gen_tcp:send(State#state.socket, XML),
   State.
 
 send_bind(State) ->
