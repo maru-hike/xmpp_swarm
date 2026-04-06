@@ -15,7 +15,9 @@
   host,
   port,
   user_info = #user_info{},
-  stream = undefined
+  stream = undefined,
+  phase = unauthenticated,
+  pending = []
 }).
 
 start_link(Host, Port, UserOpts) ->
@@ -57,7 +59,7 @@ init({Host, Port, UserOpts}) ->
 
 
 handle_info({tcp, Socket, Data}, State) ->
-  % io:format("RAW RECV: ~p~n", [Data]),
+  io:format("RAW RECV: ~p~n", [Data]),
   Stream1 = fxml_stream:parse(State#state.stream, Data),
 
   % lists:foreach(fun(E) ->
@@ -77,8 +79,8 @@ handle_info({'$gen_event', {xmlstreamend, Name}}, State) ->
 handle_info({'$gen_event', {xmlstreamelement, El}}, State) ->
   Decoded = xmpp:decode(El),
   io:format("DECODED: ~p~n", [Decoded]),
-  handle_stanza(Decoded, State),
-  {noreply, State};
+  State1 = handle_stanza(Decoded, State),
+  {noreply, State1};
 handle_info({tcp_closed, Socket}, State) ->
   io:format("Socket closed ~p~n", [Socket]),
   {stop, normal, State}.
@@ -105,7 +107,12 @@ extract_domain(JID) ->
 opts_to_user_info(#{jid := JID, password := Pass}) ->
   #user_info{jid = JID, password = Pass}.
 
-handle_stanza(#stream_features{sub_els = Elements} = _Features, State) ->
+handle_stanza(Stanza, #state{phase = unauthenticated} = State) ->
+  handle_unauthenticated(Stanza, State);
+handle_stanza(Stanza, #state{phase = authenticated} = State) ->
+  handle_authenticated(Stanza, State).
+
+handle_unauthenticated(#stream_features{sub_els = Elements} = _Features, State) ->
   case lists:keyfind(sasl_mechanisms, 1, Elements) of
     false ->
       io:format("No mechanisms found~n"),
@@ -113,14 +120,60 @@ handle_stanza(#stream_features{sub_els = Elements} = _Features, State) ->
     {sasl_mechanisms, Mechs} ->
       maybe_start_auth(Mechs, State)
   end;
-handle_stanza(#sasl_success{}, State) ->
+handle_unauthenticated(#sasl_success{}, State) ->
   io:format("SASL SUCCESS - restarting stream~n"),
 
-  restart_stream(State),
-  State;
-handle_stanza(Stanza, State) ->
+  State1 = restart_stream(State),
+  io:format("State after reset~p~n", [State1]),
+  State1;
+handle_unauthenticated(Stanza, State) ->
   io:format("OTHER STANZA: ~p~n", [Stanza]),
   State.
+
+handle_authenticated(#stream_features{sub_els = Features}, State) ->
+  io:format("Processing features:~p~n", [Features]),
+  lists:map(fun(#bind{}) ->
+      %% Do binding logic here
+      send_bind(State),
+      State;
+    (Feature) ->
+      io:format("IGNORING STREAM FEATURE:~p~n", [Feature])
+  end, Features),
+  State;
+handle_authenticated(#iq{type = get, id = Id, from = From, sub_els = [#ping{}]}, State) ->
+  io:format("PING from ~p, replying with pong~n", [From]),
+  Reply = #iq{type = result, id = Id, to = From, sub_els = []},
+  send_xmpp(Reply, State);
+handle_authenticated(#iq{type = result, id = <<"bind_1">>, sub_els = [#bind{jid = JID}]}, State) ->
+  io:format("BOUND successfully as ~s~n", [jid:encode(JID)]),
+  State;
+handle_authenticated(#iq{type = error} = IQ, State) ->
+  io:format("IQ ERROR: ~p~n", [IQ]),
+  State;
+handle_authenticated(Stanza, State) ->
+  io:format("UNHANDLED AUTHENTICATED STANZA: ~p~n", [Stanza]),
+  State.
+
+send_bind(State) ->
+  Resource = <<"xmpp-swarm">>,
+  IQ = #iq{type = set, id = <<"bind_1">>, sub_els = [#bind{resource = Resource}]},
+  send_xmpp(IQ, State).
+
+send_xmpp(XMPP, #state{pending = Pending} =State) ->
+  io:format("Sending XMPP:~p", [XMPP]),
+  case get_id(XMPP) of
+    undefined ->
+      io:format("ID FIELD NOT FOUND:~p~n", [XMPP]),
+      State;
+    Id ->
+      XML = fxml:element_to_binary(xmpp:encode(XMPP)),
+      io:format("Sending XML:~p", [XML]),
+      ok = gen_tcp:send(State#state.socket, XML),
+      State#state{pending = [Id|Pending]}
+  end.
+
+get_id(#iq{id = Id}) -> Id;
+get_id(_) -> undefined.
 
 maybe_start_auth(Mechs, State) ->
   case lists:member(<<"PLAIN">>, Mechs) of
@@ -165,4 +218,4 @@ restart_stream(State = #state{socket = Socket, user_info = UserInfo}) ->
   ok = gen_tcp:send(Socket, Stream),
 
   fxml_stream:reset(State#state.stream),
-  State#state{stream = fxml_stream:new(self())}.
+  State#state{stream = fxml_stream:new(self()), phase = authenticated}.

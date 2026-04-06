@@ -10,6 +10,7 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+    jid:start(),
     xmpp_swarm_sup:start_link().
 
 stop(_State) ->

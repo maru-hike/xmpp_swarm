@@ -4,5 +4,5 @@
               {modules,[xmpp_swarm_app,xmpp_swarm_connection,
                         xmpp_swarm_stream,xmpp_swarm_sup]},
               {registered,[]},
-              {applications,[kernel,stdlib]},
+              {applications,[kernel,stdlib,p1_utils,stringprep,fast_xml,xmpp]},
               {mod,{xmpp_swarm_app,[]}}]}.

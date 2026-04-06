@@ -4,6 +4,6 @@
   {vsn, "0.1.0"},
   {modules, [xmpp_swarm_app, xmpp_swarm_sup]},
   {registered, []},
-  {applications, [kernel, stdlib]},
+  {applications, [kernel, stdlib, p1_utils, stringprep, fast_xml, xmpp]},
   {mod, {xmpp_swarm_app, []}}
  ]}.
